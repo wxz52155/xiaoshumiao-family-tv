@@ -50,20 +50,112 @@ function midFromUrl(value: string) {
   return null;
 }
 
+const biliUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
+
+type BiliFingerprintResponse = {
+  code?: number;
+  data?: { b_3?: string; b_4?: string };
+};
+
+type BiliNavResponse = {
+  message?: string;
+  data?: { wbi_img?: { img_url?: string; sub_url?: string } };
+};
+
+type BiliVideoItem = {
+  bvid: string;
+  title: string;
+  description?: string;
+  pic?: string;
+  length?: string;
+  author?: string;
+};
+
+type BiliVideoResponse = {
+  code?: number;
+  message?: string;
+  data?: { list?: { vlist?: BiliVideoItem[] } };
+};
+
+async function fetchBiliJson<T>(url: string, headers: Record<string, string>, label: string): Promise<T> {
+  const response = await fetch(url, { headers });
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  if (!contentType.includes("json") || text.trimStart().startsWith("<")) {
+    throw new Error(`B站${label}接口触发访问限制（HTTP ${response.status}），请稍后重试`);
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`B站${label}接口返回了无法识别的数据，请稍后重试`);
+  }
+}
+
+async function getBiliCookie() {
+  const configured = (env as unknown as { BILI_COOKIE?: string }).BILI_COOKIE?.trim();
+  if (configured) return configured;
+  const headers = {
+    "User-Agent": biliUserAgent,
+    Accept: "application/json, text/plain, */*",
+    Referer: "https://www.bilibili.com/",
+  };
+  try {
+    const fingerprint = await fetchBiliJson<BiliFingerprintResponse>("https://api.bilibili.com/x/frontend/finger/spi", headers, "访客认证");
+    if (fingerprint?.code === 0 && fingerprint?.data?.b_3) {
+      return [
+        `buvid3=${fingerprint.data.b_3}`,
+        fingerprint.data.b_4 ? `buvid4=${fingerprint.data.b_4}` : "",
+        `b_nut=${Math.floor(Date.now() / 1000)}`,
+      ].filter(Boolean).join("; ");
+    }
+  } catch {
+    // Fall back to a stable visitor ID if Bilibili blocks the fingerprint endpoint.
+  }
+  return `buvid3=${crypto.randomUUID().toUpperCase()}infoc; b_nut=${Math.floor(Date.now() / 1000)}`;
+}
+
+function randomBrowserToken() {
+  return btoa(`${crypto.randomUUID()}-${crypto.randomUUID()}`).replace(/=+$/, "");
+}
+
 async function fetchBiliVideos(mid: string, page = 1) {
-  const cookie = (env as unknown as { BILI_COOKIE?: string }).BILI_COOKIE || "";
-  const headers = { "User-Agent": "Mozilla/5.0", Referer: `https://space.bilibili.com/${mid}`, Cookie: cookie };
-  const nav = await fetch("https://api.bilibili.com/x/web-interface/nav", { headers }).then((r) => r.json()) as any;
+  const cookie = await getBiliCookie();
+  const headers = {
+    "User-Agent": biliUserAgent,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    Origin: "https://space.bilibili.com",
+    Referer: `https://space.bilibili.com/${mid}/video`,
+    Cookie: cookie,
+  };
+  const nav = await fetchBiliJson<BiliNavResponse>("https://api.bilibili.com/x/web-interface/nav", headers, "认证");
   const imgKey = nav?.data?.wbi_img?.img_url?.split("/").pop()?.split(".")[0];
   const subKey = nav?.data?.wbi_img?.sub_url?.split("/").pop()?.split(".")[0];
-  if (!imgKey || !subKey) throw new Error("B站访问受限，请稍后重试或配置 BILI_COOKIE");
+  if (!imgKey || !subKey) throw new Error(`B站认证失败：${nav?.message || "无法取得 WBI 密钥"}`);
   const raw = imgKey + subKey;
   const mixin = mixinKeyEncTab.map((i) => raw[i]).join("").slice(0, 32);
-  const params: Record<string, string> = { mid, pn: String(page), ps: "50", order: "pubdate", wts: String(Math.floor(Date.now() / 1000)) };
+  const params: Record<string, string> = {
+    mid,
+    pn: String(page),
+    ps: "50",
+    tid: "0",
+    keyword: "",
+    order: "pubdate",
+    order_avoided: "true",
+    platform: "web",
+    web_location: "1550101",
+    dm_img_list: "[]",
+    dm_img_str: randomBrowserToken(),
+    dm_cover_img_str: randomBrowserToken(),
+    dm_img_inter: '{"ds":[],"wh":[6093,6631,31],"of":[430,760,380]}',
+    wts: String(Math.floor(Date.now() / 1000)),
+  };
   const query = Object.keys(params).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k].replace(/[!'()*]/g, ""))}`).join("&");
   const signed = `${query}&w_rid=${md5(query + mixin)}`;
-  const response = await fetch(`https://api.bilibili.com/x/space/wbi/arc/search?${signed}`, { headers }).then((r) => r.json()) as any;
-  if (response.code !== 0) throw new Error(response.message || "B站同步失败");
+  const response = await fetchBiliJson<BiliVideoResponse>(`https://api.bilibili.com/x/space/wbi/arc/search?${signed}`, headers, "视频列表");
+  if (response.code !== 0) {
+    throw new Error(`B站拒绝同步：${response.message || "未知错误"}（代码 ${response.code}）`);
+  }
   return response.data;
 }
 

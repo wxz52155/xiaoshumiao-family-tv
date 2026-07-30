@@ -35,7 +35,7 @@ function token() {
   return sessionStorage.getItem("admin-token") || "";
 }
 
-async function api(path: string, options: RequestInit = {}) {
+async function api<T = Record<string, unknown>>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
     headers: {
@@ -44,9 +44,19 @@ async function api(path: string, options: RequestInit = {}) {
       ...(options.headers || {}),
     },
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "操作失败，请稍后重试");
-  return data;
+  const contentType = response.headers.get("content-type") || "";
+  const text = await response.text();
+  let data: Record<string, unknown>;
+  try {
+    data = contentType.includes("json") ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  if (!contentType.includes("json")) {
+    throw new Error(response.ok ? "服务器返回格式异常，请刷新页面后重试" : `服务器请求失败（${response.status}），请稍后重试`);
+  }
+  if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "操作失败，请稍后重试");
+  return data as T;
 }
 
 export default function Dashboard() {
@@ -65,12 +75,15 @@ export default function Dashboard() {
   const [protectedMode, setProtectedMode] = useState(false);
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [apiUrl, setApiUrl] = useState("/api/ok");
+  const [apiUrl] = useState(() => typeof window === "undefined" ? "/api/ok" : `${window.location.origin}/api/ok`);
 
   const load = useCallback(async () => {
     try {
       const [categoryData, videoData, taskData, statusData] = await Promise.all([
-        api("/api/categories"), api("/api/videos?limit=100"), api("/api/sync/tasks"), api("/api/admin/status"),
+        api<{ categories: Category[] }>("/api/categories"),
+        api<{ rows: Video[] }>("/api/videos?limit=100"),
+        api<{ tasks: SyncTask[] }>("/api/sync/tasks"),
+        api<{ protected: boolean }>("/api/admin/status"),
       ]);
       setCategories(categoryData.categories);
       setVideos(videoData.rows);
@@ -82,8 +95,8 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    setApiUrl(`${window.location.origin}/api/ok`);
-    void load();
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   useEffect(() => {
