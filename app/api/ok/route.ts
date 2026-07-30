@@ -1,7 +1,7 @@
 export async function GET(request: Request) {
   const origin = new URL(request.url).origin;
   const config = {
-    spider: "https://raw.githubusercontent.com/qist/tvbox/master/xiaosa/spider.jar",
+    spider: `${origin}/spider.jar;md5;8cafd1c984fba0c1be595f8ab0946d14`,
     sites: [
       { key: "family_cms", name: "小树苗 · 儿童中心", type: 1, api: `${origin}/api/vod`, searchable: 1, quickSearch: 1, filterable: 1, changeable: 0, style: { type: "rect", ratio: 1.5 } },
       { key: "family_bili", name: "哔哩 · 登录与播放", type: 3, api: "csp_BiliYS", searchable: 1, quickSearch: 0, filterable: 0, changeable: 0, ext: { cookie: "http://127.0.0.1:9978/file/TVBox/bili_cookie.txt" } },
