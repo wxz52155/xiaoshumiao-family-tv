@@ -31,12 +31,12 @@ npm run dev
 `wrangler.jsonc` 已绑定以下 D1 数据库：
 
 - Binding：`DB`
-- Database：`xiaoshumiao-family-tv-db`
+- Database：`tv`
 
 首次部署后应用数据库迁移：
 
 ```bash
-npx wrangler d1 migrations apply xiaoshumiao-family-tv-db --remote
+npx wrangler d1 migrations apply DB --remote
 ```
 
 在 Worker 的 Settings → Variables and Secrets 中添加：

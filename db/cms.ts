@@ -148,8 +148,17 @@ export async function getVideosByIds(ids: number[]) {
   return result.results;
 }
 
+function adminToken() {
+  const workerEnv = (env as unknown as { ADMIN_TOKEN?: string }).ADMIN_TOKEN;
+  return workerEnv || process.env.ADMIN_TOKEN || "";
+}
+
+export function adminProtectionEnabled() {
+  return Boolean(adminToken());
+}
+
 export function adminAuthorized(request: Request) {
-  const expected = (env as unknown as { ADMIN_TOKEN?: string }).ADMIN_TOKEN;
+  const expected = adminToken();
   if (!expected) return true;
   return request.headers.get("x-admin-token") === expected;
 }

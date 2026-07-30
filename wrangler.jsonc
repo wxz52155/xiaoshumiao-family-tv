@@ -10,7 +10,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "xiaoshumiao-family-tv-db",
+      "database_name": "tv",
       "database_id": "36153bd9-b27f-4f2e-8874-43909c49d9f0",
       "migrations_dir": "drizzle"
     }
