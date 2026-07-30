@@ -51,6 +51,11 @@ function midFromUrl(value: string) {
 }
 
 const biliUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
+const biliApiHosts = [
+  "https://api.biliapi.net",
+  "https://api.biliapi.com",
+  "https://api.bilibili.com",
+];
 
 type BiliFingerprintResponse = {
   code?: number;
@@ -58,6 +63,7 @@ type BiliFingerprintResponse = {
 };
 
 type BiliNavResponse = {
+  code?: number;
   message?: string;
   data?: { wbi_img?: { img_url?: string; sub_url?: string } };
 };
@@ -91,6 +97,25 @@ async function fetchBiliJson<T>(url: string, headers: Record<string, string>, la
   }
 }
 
+async function fetchBiliFromHosts<T extends { message?: string }>(
+  path: string,
+  headers: Record<string, string>,
+  label: string,
+  usable: (data: T) => boolean,
+): Promise<T> {
+  let lastError: Error | null = null;
+  for (const host of biliApiHosts) {
+    try {
+      const data = await fetchBiliJson<T>(`${host}${path}`, headers, label);
+      if (usable(data)) return data;
+      lastError = new Error(data.message || "请求被拒绝");
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("请求失败");
+    }
+  }
+  throw new Error(`B站${label}失败：${lastError?.message || "所有接口均不可用"}`);
+}
+
 async function getBiliCookie() {
   const configured = (env as unknown as { BILI_COOKIE?: string }).BILI_COOKIE?.trim();
   if (configured) return configured;
@@ -100,14 +125,17 @@ async function getBiliCookie() {
     Referer: "https://www.bilibili.com/",
   };
   try {
-    const fingerprint = await fetchBiliJson<BiliFingerprintResponse>("https://api.bilibili.com/x/frontend/finger/spi", headers, "访客认证");
-    if (fingerprint?.code === 0 && fingerprint?.data?.b_3) {
-      return [
-        `buvid3=${fingerprint.data.b_3}`,
-        fingerprint.data.b_4 ? `buvid4=${fingerprint.data.b_4}` : "",
-        `b_nut=${Math.floor(Date.now() / 1000)}`,
-      ].filter(Boolean).join("; ");
-    }
+    const fingerprint = await fetchBiliFromHosts<BiliFingerprintResponse>(
+      "/x/frontend/finger/spi",
+      headers,
+      "访客认证",
+      (data) => data.code === 0 && Boolean(data.data?.b_3),
+    );
+    return [
+      `buvid3=${fingerprint.data?.b_3}`,
+      fingerprint.data?.b_4 ? `buvid4=${fingerprint.data.b_4}` : "",
+      `b_nut=${Math.floor(Date.now() / 1000)}`,
+    ].filter(Boolean).join("; ");
   } catch {
     // Fall back to a stable visitor ID if Bilibili blocks the fingerprint endpoint.
   }
@@ -128,7 +156,12 @@ async function fetchBiliVideos(mid: string, page = 1) {
     Referer: `https://space.bilibili.com/${mid}/video`,
     Cookie: cookie,
   };
-  const nav = await fetchBiliJson<BiliNavResponse>("https://api.bilibili.com/x/web-interface/nav", headers, "认证");
+  const nav = await fetchBiliFromHosts<BiliNavResponse>(
+    "/x/web-interface/nav",
+    headers,
+    "认证",
+    (data) => Boolean(data.data?.wbi_img?.img_url && data.data?.wbi_img?.sub_url),
+  );
   const imgKey = nav?.data?.wbi_img?.img_url?.split("/").pop()?.split(".")[0];
   const subKey = nav?.data?.wbi_img?.sub_url?.split("/").pop()?.split(".")[0];
   if (!imgKey || !subKey) throw new Error(`B站认证失败：${nav?.message || "无法取得 WBI 密钥"}`);
@@ -152,10 +185,12 @@ async function fetchBiliVideos(mid: string, page = 1) {
   };
   const query = Object.keys(params).sort().map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k].replace(/[!'()*]/g, ""))}`).join("&");
   const signed = `${query}&w_rid=${md5(query + mixin)}`;
-  const response = await fetchBiliJson<BiliVideoResponse>(`https://api.bilibili.com/x/space/wbi/arc/search?${signed}`, headers, "视频列表");
-  if (response.code !== 0) {
-    throw new Error(`B站拒绝同步：${response.message || "未知错误"}（代码 ${response.code}）`);
-  }
+  const response = await fetchBiliFromHosts<BiliVideoResponse>(
+    `/x/space/wbi/arc/search?${signed}`,
+    headers,
+    "视频列表",
+    (data) => data.code === 0 && Boolean(data.data?.list?.vlist),
+  );
   return response.data;
 }
 
