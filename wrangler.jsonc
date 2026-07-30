@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "xiaoshumiao-family-tv",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-07-30",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "keep_vars": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "xiaoshumiao-family-tv-db",
+      "database_id": "36153bd9-b27f-4f2e-8874-43909c49d9f0",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

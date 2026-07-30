@@ -1,98 +1,62 @@
-# vinext-starter
+# 小树苗 · 家庭儿童视频中心
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+家长可控的儿童视频 CMS。支持分类管理、B站视频与 UP 主同步、夸克/百度网盘分享链接，并向 OK影视提供 TVBox 配置接口。
 
-## Prerequisites
+## 本地开发
 
-- Node.js `>=22.13.0`
-
-## Quick Start
+要求 Node.js 22.13 或更高版本。
 
 ```bash
 npm install
 npm run dev
+```
+
+本地后台：`http://localhost:3000`
+
+## Cloudflare Workers 部署
+
+项目使用 Cloudflare Workers、Workers Static Assets 和 D1。
+
+### GitHub 自动部署设置
+
+在 Cloudflare Workers & Pages 中导入仓库：
+
+- Repository：`wxz52155/xiaoshumiao-family-tv`
+- Production branch：`main`
+- Root directory：留空
+- Build command：`npm run build`
+- Deploy command：`npx wrangler deploy`
+- Node.js version：22
+
+`wrangler.jsonc` 已绑定以下 D1 数据库：
+
+- Binding：`DB`
+- Database：`xiaoshumiao-family-tv-db`
+
+首次部署后应用数据库迁移：
+
+```bash
+npx wrangler d1 migrations apply xiaoshumiao-family-tv-db --remote
+```
+
+在 Worker 的 Settings → Variables and Secrets 中添加：
+
+- `ADMIN_TOKEN`：必填，家长管理口令，类型选 Secret
+- `BILI_COOKIE`：选填，B站同步受限时配置
+
+不要对整个 Worker 开启 Cloudflare Access，否则 OK影视无法读取公开接口。
+
+## 接口
+
+- OK影视 / TVBox 配置：`/api/ok`
+- MacCMS 数据接口：`/api/vod`
+- 分类管理：`/api/categories`
+- 内容管理：`/api/videos`
+
+## 常用命令
+
+```bash
 npm run build
+npm run db:generate
+npm run deploy
 ```
-
-This starter does not use `wrangler.jsonc`.
-
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
